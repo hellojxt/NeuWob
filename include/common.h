@@ -7,6 +7,7 @@
 #include <string>
 #define FMT_HEADER_ONLY
 #include <fmt/core.h>
+#include <curand_kernel.h>
 
 #define NWOB_NAMESPACE_BEGIN \
     namespace nwob           \
@@ -15,6 +16,7 @@
 
 NWOB_NAMESPACE_BEGIN
 
+using randomState = curandState_t;
 #define STRINGIFY(x) #x
 #define STR(x) STRINGIFY(x)
 #define FILE_LINE __FILE__ ":" STR(__LINE__)

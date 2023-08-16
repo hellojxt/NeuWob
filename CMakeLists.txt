@@ -12,8 +12,8 @@ set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --extended-lambda --expt-relaxed-const
 
 # include_directories(${CMAKE_CURRENT_SOURCE_DIR}/deps/eigen/)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/deps/lbvh/)
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/deps/libigl)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/deps/json)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/deps/tinyobjloader)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/deps/fmt)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 add_subdirectory(deps/imgui)
@@ -23,6 +23,7 @@ set(NEUWOB_SRCS
 )
 
 add_library(neuwob STATIC ${NEUWOB_SRCS})
+target_compile_definitions(neuwob PRIVATE DATA_DIR="${CMAKE_SOURCE_DIR}/data/")
 
 add_library(ui STATIC src/ui.cu)
 target_compile_definitions(ui PRIVATE IMGUI_CONFIG_FILE="${CMAKE_SOURCE_DIR}/imgui.ini")

@@ -1,17 +1,15 @@
 #include <iostream>
 #include "common.h"
 #include "gpu_memory.h"
+#include "nlohmann/json_fwd.hpp"
 #include "ui.h"
+#include <nlohmann/json.hpp>
+#include "estimator.h"
+#include "scene.h"
 using namespace nwob;
 
-int main()
+int main(int argc, char *argv[])
 {
-    GPUMatrix<uchar4> image(512, 512);
-    image.memory.memset(125);
-    parallel_for(image.size(), [out = image.device_ptr()] __device__(int i) {
-        int y = i / out.stride();
-        int x = i % out.stride();
-        out[y][x] = make_uchar4(y / 2, 0, 0, 255);
-    });
-    MemoryVisualizer().visualize(&image);
+    const std::string input_json_file = argv[1];
+    SceneHost scene(input_json_file);
 }
