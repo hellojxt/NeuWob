@@ -8,6 +8,7 @@
 #define FMT_HEADER_ONLY
 #include <fmt/core.h>
 #include <curand_kernel.h>
+#include <thrust/complex.h>
 
 #define NWOB_NAMESPACE_BEGIN \
     namespace nwob           \
@@ -16,7 +17,9 @@
 
 NWOB_NAMESPACE_BEGIN
 
+using complex = thrust::complex<float>;
 using randomState = curandState_t;
+#define RAND_F (float)rand() / (float)RAND_MAX
 #define STRINGIFY(x) #x
 #define STR(x) STRINGIFY(x)
 #define FILE_LINE __FILE__ ":" STR(__LINE__)
@@ -179,32 +182,5 @@ inline void parallel_for_soa(size_t n_elements, uint32_t n_dims, F &&fun)
 {
     parallel_for_soa(0, n_elements, n_dims, std::forward<F>(fun));
 }
-
-template <typename T>
-struct PitchedPtr
-{
-        HOST_DEVICE PitchedPtr() : ptr{nullptr}, stride_in_bytes{sizeof(T)} {}
-        HOST_DEVICE PitchedPtr(T *ptr, size_t stride_in_elements, size_t offset = 0, size_t extra_stride_bytes = 0)
-            : ptr{ptr + offset}, stride_in_bytes{(uint32_t)(stride_in_elements * sizeof(T) + extra_stride_bytes)}
-        {}
-
-        template <typename U>
-        HOST_DEVICE explicit PitchedPtr(PitchedPtr<U> other)
-            : ptr{(T *)other.ptr}, stride_in_bytes{other.stride_in_bytes}
-        {}
-
-        HOST_DEVICE T *operator[](uint32_t y) const { return (T *)((const char *)ptr + y * stride_in_bytes); }
-
-        HOST_DEVICE void operator+=(uint32_t y) { ptr = (T *)((const char *)ptr + y * stride_in_bytes); }
-
-        HOST_DEVICE void operator-=(uint32_t y) { ptr = (T *)((const char *)ptr - y * stride_in_bytes); }
-
-        HOST_DEVICE explicit operator bool() const { return ptr; }
-
-        HOST_DEVICE uint32_t stride() const { return stride_in_bytes / sizeof(T); }
-
-        T *ptr;
-        uint32_t stride_in_bytes;
-};
 
 NWOB_NAMESPACE_END

@@ -10,10 +10,35 @@
 #include <tuple>
 #include <unordered_map>
 #include <vector>
-
+#include "backward.h"
 NWOB_NAMESPACE_BEGIN
+template <typename T>
+struct PitchedPtr
+{
+        HOST_DEVICE PitchedPtr() : ptr{nullptr}, stride_in_bytes{sizeof(T)} {}
+        HOST_DEVICE PitchedPtr(T *ptr, size_t stride_in_elements, size_t offset = 0, size_t extra_stride_bytes = 0)
+            : ptr{ptr + offset}, stride_in_bytes{(uint32_t)(stride_in_elements * sizeof(T) + extra_stride_bytes)}
+        {}
 
-#define DEBUG_GUARD_SIZE 0
+        template <typename U>
+        HOST_DEVICE explicit PitchedPtr(PitchedPtr<U> other)
+            : ptr{(T *)other.ptr}, stride_in_bytes{other.stride_in_bytes}
+        {}
+
+        HOST_DEVICE T *operator[](uint32_t y) const { return (T *)((const char *)ptr + y * stride_in_bytes); }
+
+        HOST_DEVICE void operator+=(uint32_t y) { ptr = (T *)((const char *)ptr + y * stride_in_bytes); }
+
+        HOST_DEVICE void operator-=(uint32_t y) { ptr = (T *)((const char *)ptr - y * stride_in_bytes); }
+
+        HOST_DEVICE explicit operator bool() const { return ptr; }
+
+        HOST_DEVICE uint32_t stride() const { return stride_in_bytes / sizeof(T); }
+
+        T *ptr;
+        uint32_t stride_in_bytes;
+};
+#define DEBUG_GUARD_SIZE 32
 
 inline std::atomic<size_t> &total_n_bytes_allocated()
 {
@@ -48,6 +73,15 @@ class GPUMemory
                 if (buf[i] != 0xff)
                 {
                     printf("TRASH BEFORE BLOCK offset %d data %p, read 0x%02x expected 0xff!\n", i, m_data, buf[i]);
+                    using namespace backward;
+                    StackTrace st;
+                    st.load_here(32);
+                    Printer p;
+                    p.object = true;
+                    p.color_mode = ColorMode::always;
+                    p.address = true;
+                    p.print(st, stderr);
+
                     break;
                 }
             cudaMemcpy(buf, rawptr + m_size * sizeof(T), DEBUG_GUARD_SIZE, cudaMemcpyDeviceToHost);
@@ -55,6 +89,14 @@ class GPUMemory
                 if (buf[i] != 0xfe)
                 {
                     printf("TRASH AFTER BLOCK offset %d data %p, read 0x%02x expected 0xfe!\n", i, m_data, buf[i]);
+                    using namespace backward;
+                    StackTrace st;
+                    st.load_here(32);
+                    Printer p;
+                    p.object = true;
+                    p.color_mode = ColorMode::always;
+                    p.address = true;
+                    p.print(st, stderr);
                     break;
                 }
 #endif
@@ -331,6 +373,9 @@ class GPUMemory
             check_guards();
             return m_data;
         }
+
+        T *begin() const { return data(); }
+        T *end() const { return data() + m_size; }
 
         size_t get_num_elements() const { return m_size; }
 

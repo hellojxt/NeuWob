@@ -9,6 +9,9 @@
 #include "common.h"
 #include "ui.h"
 #include "gpu_memory.h"
+#include "png.h"
+#include <stdlib.h>
+#include <cstring>
 
 NWOB_NAMESPACE_BEGIN
 static void glfw_error_callback(int error, const char *description)
@@ -117,6 +120,36 @@ void MemoryVisualizer::visualize(GPUMatrix<uchar4> *data)
 
     glfwDestroyWindow(window);
     glfwTerminate();
+}
+
+void MemoryVisualizer::write_to_png(const char *filename, GPUMatrix<uchar4> *data)
+{
+    auto width = data->width();
+    auto height = data->height();
+    std::vector<uchar4> data_host(width * height);
+    data->memory.copy_to_host(data_host);
+    FILE *fp = fopen(filename, "wb");
+    png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+    png_infop info_ptr = png_create_info_struct(png_ptr);
+    png_init_io(png_ptr, fp);
+    png_set_IHDR(png_ptr, info_ptr, width, height, 8, PNG_COLOR_TYPE_RGBA, PNG_INTERLACE_NONE,
+                 PNG_COMPRESSION_TYPE_BASE, PNG_FILTER_TYPE_BASE);
+    png_write_info(png_ptr, info_ptr);
+    png_bytep row = (png_bytep)malloc(4 * width * sizeof(png_byte));
+    for (int i = 0; i < height; i++)
+    {
+        for (int j = 0; j < width; j++)
+        {
+            row[j * 4 + 0] = data_host[i * width + j].x;
+            row[j * 4 + 1] = data_host[i * width + j].y;
+            row[j * 4 + 2] = data_host[i * width + j].z;
+            row[j * 4 + 3] = data_host[i * width + j].w;
+        }
+        png_write_row(png_ptr, row);
+    }
+    png_write_end(png_ptr, NULL);
+    fclose(fp);
+    free(row);
 }
 
 NWOB_NAMESPACE_END

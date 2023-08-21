@@ -8,7 +8,7 @@
 
 NWOB_NAMESPACE_BEGIN
 
-SceneHost::SceneHost(const std::string config_json_file)
+SceneHost::SceneHost(const std::string config_json_file, int cut_idx)
 {
     using json = nlohmann::json;
     json config;
@@ -70,5 +70,21 @@ SceneHost::SceneHost(const std::string config_json_file)
     // Loaded success
     std::cout << "OBJ file:" << input_obj_file << " loaded!"
               << "\n";
+
+    elements.clear();
+    for (int i = 0; i < triangles.size(); i++)
+    {
+        Element e;
+        e.v0 = vertices[triangles[i].x];
+        e.v1 = vertices[triangles[i].y];
+        e.v2 = vertices[triangles[i].z];
+        e.n = normalize(cross(e.v1 - e.v0, e.v2 - e.v0));
+        elements.push_back(e);
+    }
+    if (cut_idx >= 0)
+    {
+        elements.erase(elements.begin() + cut_idx, elements.end());
+    }
 }
+
 NWOB_NAMESPACE_END
