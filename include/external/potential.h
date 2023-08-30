@@ -8,7 +8,7 @@ enum PotentialType
     SINGLE_LAYER,
     DOUBLE_LAYER
 };
-__device__ inline complex single_layer_potential(float3 src_coord, float3 trg_coord, complex k)
+__device__ __host__ inline complex single_layer_potential(float3 src_coord, float3 trg_coord, complex k)
 {
     complex potential(0, 0);
     float3 s2t = trg_coord - src_coord;
@@ -22,7 +22,10 @@ __device__ inline complex single_layer_potential(float3 src_coord, float3 trg_co
     return potential;
 }
 
-__device__ inline complex double_layer_potential(float3 src_coord, float3 trg_coord, float3 trial_norm, complex k)
+__device__ __host__ inline complex double_layer_potential(float3 src_coord,
+                                                          float3 trg_coord,
+                                                          float3 trial_norm,
+                                                          complex k)
 {
     complex potential(0, 0);
     float3 s2t = src_coord - trg_coord;
@@ -38,11 +41,11 @@ __device__ inline complex double_layer_potential(float3 src_coord, float3 trg_co
 
     return potential;
 }
-__device__ inline complex layer_potential(float3 src_coord,
-                                          float3 trg_coord,
-                                          float3 trial_norm,
-                                          complex k,
-                                          PotentialType type)
+__device__ __host__ inline complex layer_potential(float3 src_coord,
+                                                   float3 trg_coord,
+                                                   float3 trial_norm,
+                                                   complex k,
+                                                   PotentialType type)
 {
     if (type == SINGLE_LAYER)
         return single_layer_potential(src_coord, trg_coord, k);

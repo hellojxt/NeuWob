@@ -10,21 +10,23 @@
 #include "helper_math.h"
 #include <curand_kernel.h>
 #include "gpu_memory.h"
-#include "multipole.h"
 
 NWOB_NAMESPACE_BEGIN
 
 // triangle
 struct Element
 {
+        int3 indices;
         float3 v0, v1, v2, n;
-        complex N0, N1, N2;
+        complex N0, N1, N2, NC;
         inline HOST_DEVICE float area() const noexcept { return length(cross((v1 - v0), (v2 - v0))) / 2.0f; }
         inline HOST_DEVICE complex neumann(float u, float v) const noexcept
         {
             return N0 * (1 - u - v) + N1 * u + N2 * v;
         }
         inline HOST_DEVICE float3 point(float u, float v) const noexcept { return v0 * (1 - u - v) + v1 * u + v2 * v; }
+        inline HOST_DEVICE float3 center() const noexcept { return (v0 + v1 + v2) / 3.f; }
+        inline HOST_DEVICE complex center_neumann() const noexcept { return NC; }
 };
 
 // boundary point
@@ -174,6 +176,7 @@ class SceneHost
                 elements[i].N0 = neumann_func(elements[i].v0, elements[i].n);
                 elements[i].N1 = neumann_func(elements[i].v1, elements[i].n);
                 elements[i].N2 = neumann_func(elements[i].v2, elements[i].n);
+                elements[i].NC = neumann_func(elements[i].center(), elements[i].n);
             }
             bvh = lbvh::bvh<float, 3, Element, ElementAABB>(elements.begin(), elements.end());
             std::vector<float> area_cdf_host(elements.size());

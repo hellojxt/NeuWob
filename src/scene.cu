@@ -79,6 +79,7 @@ SceneHost::SceneHost(const std::string config_json_file, int cut_idx)
         e.v1 = vertices[triangles[i].y];
         e.v2 = vertices[triangles[i].z];
         e.n = normalize(cross(e.v1 - e.v0, e.v2 - e.v0));
+        e.indices = make_int3(triangles[i].x, triangles[i].y, triangles[i].z);
         elements.push_back(e);
     }
     if (cut_idx >= 0)
