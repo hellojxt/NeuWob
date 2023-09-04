@@ -38,6 +38,7 @@ struct PitchedPtr
         T *ptr;
         uint32_t stride_in_bytes;
 };
+
 #define DEBUG_GUARD_SIZE 32
 
 inline std::atomic<size_t> &total_n_bytes_allocated()

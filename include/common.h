@@ -17,6 +17,8 @@
 
 NWOB_NAMESPACE_BEGIN
 
+#define MEM_CHECK
+
 using complex = thrust::complex<float>;
 using randomState = curandState_t;
 #define RAND_F (float)rand() / (float)RAND_MAX

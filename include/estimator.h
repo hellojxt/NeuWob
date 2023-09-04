@@ -3,8 +3,8 @@
 #include <iostream>
 #include "common.h"
 #include "helper_math.h"
-#include "scene.h"
 #include <random>
+
 NWOB_NAMESPACE_BEGIN
 
 /*

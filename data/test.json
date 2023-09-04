@@ -1,3 +1,15 @@
 {
-    "input_obj_file": "mesh/cube.obj"
+    "input_obj_file": "mesh/cube.obj",
+    "boundary_point_num": 10000,
+    "grid_resolution": 64,
+    "grid_min_point": [
+        -1.0,
+        -1.0,
+        -1.0
+    ],
+    "grid_max_point": [
+        1.0,
+        1.0,
+        1.0
+    ]
 }

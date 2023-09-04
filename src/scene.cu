@@ -5,7 +5,8 @@
 #define TINYOBJLOADER_IMPLEMENTATION
 #include "tiny_obj_loader.h"
 #include <vector>
-
+#include <curand_kernel.h>
+#include <thrust/remove.h>
 NWOB_NAMESPACE_BEGIN
 
 SceneHost::SceneHost(const std::string config_json_file, int cut_idx)
@@ -71,21 +72,132 @@ SceneHost::SceneHost(const std::string config_json_file, int cut_idx)
     std::cout << "OBJ file:" << input_obj_file << " loaded!"
               << "\n";
 
-    elements.clear();
-    for (int i = 0; i < triangles.size(); i++)
+    if (cut_idx >= 1)
+        elements.resize(cut_idx);
+    else
+        elements.resize(triangles.size());
+
+    for (int i = 0; i < elements.size(); i++)
     {
-        Element e;
-        e.v0 = vertices[triangles[i].x];
-        e.v1 = vertices[triangles[i].y];
-        e.v2 = vertices[triangles[i].z];
-        e.n = normalize(cross(e.v1 - e.v0, e.v2 - e.v0));
-        e.indices = make_int3(triangles[i].x, triangles[i].y, triangles[i].z);
-        elements.push_back(e);
+        elements[i].v0 = vertices[triangles[i].x];
+        elements[i].v1 = vertices[triangles[i].y];
+        elements[i].v2 = vertices[triangles[i].z];
+        elements[i].n = normalize(cross(elements[i].v1 - elements[i].v0, elements[i].v2 - elements[i].v0));
+        elements[i].indices = make_int3(triangles[i].x, triangles[i].y, triangles[i].z);
     }
-    if (cut_idx >= 0)
+    elements_device.resize_and_copy_from_host(elements);
+    std::vector<float> area_cdf_host(elements.size());
+    total_area = 0.f;
+    for (int i = 0; i < elements.size(); i++)
     {
-        elements.erase(elements.begin() + cut_idx, elements.end());
+        float area = elements[i].area();
+        total_area += area;
+        area_cdf_host[i] = total_area;
+    }
+    area_cdf.resize_and_copy_from_host(area_cdf_host);
+    size_t boundary_point_num = config["boundary_point_num"].get<int>();
+    boundary_points_device.resize(boundary_point_num);
+    printf("Number of boundary points: %ld\n", boundary_point_num);
+    sample_boundary_points();
+
+    auto grid_min_point = config["grid_min_point"].get<std::vector<float>>();
+    auto grid_max_point = config["grid_max_point"].get<std::vector<float>>();
+    grid.min_pos = make_float3(grid_min_point[0], grid_min_point[1], grid_min_point[2]);
+    grid.max_pos = make_float3(grid_max_point[0], grid_max_point[1], grid_max_point[2]);
+    auto grid_resolution = config["grid_resolution"].get<int>();
+    grid.size = make_int3(grid_resolution, grid_resolution, grid_resolution);
+    grid.cell_length = ((grid.max_pos - grid.min_pos) / make_float3(grid.size)).x;
+    construct_neighbor_list();
+}
+
+void SceneHost::save_boundary_points(const std::string filename) const
+{
+    std::vector<BoundaryPoint> boundary_points_host;
+    boundary_points_host.resize(boundary_points_device.size());
+    std::ofstream ofs(filename);
+    boundary_points_device.copy_to_host(boundary_points_host);
+    for (auto &bp : boundary_points_host)
+    {
+        ofs << bp.pos.x << " " << bp.pos.y << " " << bp.pos.z << "\n";
     }
 }
 
+void SceneHost::sample_boundary_points()
+{
+    size_t boundary_point_num = boundary_points_device.size();
+    GPUMemory<unsigned long long> seeds(boundary_point_num);
+    seeds.copy_from_host(get_random_seeds(boundary_point_num));
+    parallel_for(boundary_point_num,
+                 [total_area = total_area, num_elements = elements_device.size(), area_cdf = area_cdf.device_ptr(),
+                  elements = elements_device.device_ptr(), bps = boundary_points_device.device_ptr(),
+                  seeds = seeds.device_ptr()] __device__(int i) {
+                     auto seed = seeds[i];
+                     randomState rand_state;
+                     curand_init(seed, 0, 0, &rand_state);
+                     float x = curand_uniform(&rand_state) * total_area;
+                     // binary search
+                     uint l = 0, r = num_elements - 1;
+                     while (l < r)
+                     {
+                         uint mid = (l + r) / 2;
+                         if (area_cdf[mid] < x)
+                             l = mid + 1;
+                         else
+                             r = mid;
+                     }
+                     uint element_id = l;
+                     float u = curand_uniform(&rand_state);
+                     float v = curand_uniform(&rand_state);
+                     if (u + v > 1.f)
+                     {
+                         u = 1.f - u;
+                         v = 1.f - v;
+                     }
+                     bps[i] = BoundaryPoint(elements[element_id], u, v);
+                 });
+}
+
+void SceneHost::construct_neighbor_list()
+{
+    GPUMemory<NeighborList> self_list(grid.get_cell_num());
+    self_list.memset(0);
+    parallel_for(boundary_points_device.size(), [grid = grid, bps = boundary_points_device.device_ptr(),
+                                                 self_list = self_list.device_ptr()] __device__(int i) {
+        auto bp = bps[i];
+        auto grid_index = grid.get_flat_index(bp.pos);
+        self_list[grid_index].atomic_append(i);
+    });
+    GPUMemory<int> non_empty(grid.get_cell_num());
+    parallel_for(grid.get_cell_num(),
+                 [self_list = self_list.device_ptr(), non_empty = non_empty.device_ptr()] __device__(int i) {
+                     if (self_list[i].size() > 0)
+                         non_empty[i] = i + 1;
+                     else
+                         non_empty[i] = 0;
+                 });
+    auto last_iter = thrust::remove(thrust::device, non_empty.begin(), non_empty.end(), 0);
+    int non_empty_cell_num = last_iter - non_empty.begin();
+    neighbor_list.resize(grid.get_cell_num());
+    neighbor_list.memset(0);
+    parallel_for(non_empty_cell_num, [non_empty = non_empty.device_ptr(), self_list = self_list.device_ptr(),
+                                      neighbor_list = neighbor_list.device_ptr(), grid = grid] __device__(int i) {
+        int flat_idx = non_empty[i] - 1;
+        int3 cell_idx = grid.get_cell_index(flat_idx);
+        for (int x = -1; x <= 1; x++)
+        {
+            for (int y = -1; y <= 1; y++)
+            {
+                for (int z = -1; z <= 1; z++)
+                {
+                    int3 neighbor_cell_idx = cell_idx + make_int3(x, y, z);
+                    auto &src_lst = self_list[grid.get_flat_index(neighbor_cell_idx)];
+                    for (int j = 0; j < src_lst.size(); j++)
+                    {
+                        neighbor_list[flat_idx].append(src_lst[j]);
+                    }
+                }
+            }
+        }
+    });
+}
 NWOB_NAMESPACE_END

@@ -1,1 +1,3 @@
 # NeuWob
+
+Debug flag: DEBUG_GUARD_SIZE MEM_CHECK
