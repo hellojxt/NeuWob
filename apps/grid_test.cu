@@ -8,18 +8,19 @@
 
 using namespace nwob;
 #define COLOR_SCALE 4
-
-constexpr int equation_type = HELMHOLTZ;
-auto G0 = Green_func<equation_type>;
-auto G1 = Green_func_deriv<equation_type>;
-
 int main()
 {
     std::string input_json_file = "../data/test.json";
     SceneHost scene_host(input_json_file);
     float3 x0 = {0.0f, 0.0f, 0.0f};
     float k = 10;
-    scene_host.set_neumann([&](float3 p, float3 n) { return G1(x0, p, n, k); });
+    parallel_for(scene_host.elements_device.size(), [x0, k, scene = scene_host.device()] __device__(int i) {
+        auto &e = scene.elements[i];
+        e.N0 = Green_func_deriv<HELMHOLTZ>(x0, e.v0, e.n, k);
+        e.N1 = Green_func_deriv<HELMHOLTZ>(x0, e.v1, e.n, k);
+        e.N2 = Green_func_deriv<HELMHOLTZ>(x0, e.v2, e.n, k);
+    });
+    scene_host.save_boundary_points("../output/boundary_points.txt");
     int res = 256;
     GPUMatrix<uchar4> image(res, res);
     float3 grid_min_pos = {0, -2, -2};

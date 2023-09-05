@@ -24,11 +24,17 @@ int main(int argc, char *argv[])
     SceneHost scene_host(input_json_file);
     float k = 10;
     float3 x0 = {0, 0, 0};
-    scene_host.set_neumann([&](float3 p, float3 n) { return Green_func_deriv<HELMHOLTZ>(x0, p, n, k); });
+    parallel_for(scene_host.elements_device.size(), [x0, k, scene = scene_host.device()] __device__(int i) {
+        auto &e = scene.elements[i];
+        e.N0 = Green_func_deriv<HELMHOLTZ>(x0, e.v0, e.n, k);
+        e.N1 = Green_func_deriv<HELMHOLTZ>(x0, e.v1, e.n, k);
+        e.N2 = Green_func_deriv<HELMHOLTZ>(x0, e.v2, e.n, k);
+    });
 
     complex bem_dirichlet = 0;
     int trg_id = 2;
-    auto &e_lst = scene_host.elements;
+    std::vector<Element> e_lst(scene_host.elements_device.size());
+    scene_host.elements_device.copy_to_host(e_lst.data());
     auto &trg_e = e_lst[trg_id];
     printf("trg_e: (%f, %f, %f) (%f, %f, %f) (%f, %f, %f)\n", trg_e.v0.x, trg_e.v0.y, trg_e.v0.z, trg_e.v1.x,
            trg_e.v1.y, trg_e.v1.z, trg_e.v2.x, trg_e.v2.y, trg_e.v2.z);

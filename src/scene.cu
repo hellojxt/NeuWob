@@ -72,6 +72,7 @@ SceneHost::SceneHost(const std::string config_json_file, int cut_idx)
     std::cout << "OBJ file:" << input_obj_file << " loaded!"
               << "\n";
 
+    std::vector<Element> elements;
     if (cut_idx >= 1)
         elements.resize(cut_idx);
     else
@@ -108,6 +109,7 @@ SceneHost::SceneHost(const std::string config_json_file, int cut_idx)
     grid.size = make_int3(grid_resolution, grid_resolution, grid_resolution);
     grid.cell_length = ((grid.max_pos - grid.min_pos) / make_float3(grid.size)).x;
     construct_neighbor_list();
+    printf("Grid size: %d %d %d\n", grid.size.x, grid.size.y, grid.size.z);
 }
 
 void SceneHost::save_boundary_points(const std::string filename) const
@@ -127,34 +129,12 @@ void SceneHost::sample_boundary_points()
     size_t boundary_point_num = boundary_points_device.size();
     GPUMemory<unsigned long long> seeds(boundary_point_num);
     seeds.copy_from_host(get_random_seeds(boundary_point_num));
-    parallel_for(boundary_point_num,
-                 [total_area = total_area, num_elements = elements_device.size(), area_cdf = area_cdf.device_ptr(),
-                  elements = elements_device.device_ptr(), bps = boundary_points_device.device_ptr(),
-                  seeds = seeds.device_ptr()] __device__(int i) {
-                     auto seed = seeds[i];
-                     randomState rand_state;
-                     curand_init(seed, 0, 0, &rand_state);
-                     float x = curand_uniform(&rand_state) * total_area;
-                     // binary search
-                     uint l = 0, r = num_elements - 1;
-                     while (l < r)
-                     {
-                         uint mid = (l + r) / 2;
-                         if (area_cdf[mid] < x)
-                             l = mid + 1;
-                         else
-                             r = mid;
-                     }
-                     uint element_id = l;
-                     float u = curand_uniform(&rand_state);
-                     float v = curand_uniform(&rand_state);
-                     if (u + v > 1.f)
-                     {
-                         u = 1.f - u;
-                         v = 1.f - v;
-                     }
-                     bps[i] = BoundaryPoint(elements[element_id], u, v);
-                 });
+    parallel_for(boundary_point_num, [scene = device(), seeds = seeds.device_ptr()] __device__(int i) {
+        auto seed = seeds[i];
+        randomState rand_state;
+        curand_init(seed, 0, 0, &rand_state);
+        scene.boundary_points[i] = scene.sample_boundary_point(&rand_state);
+    });
 }
 
 void SceneHost::construct_neighbor_list()

@@ -32,11 +32,11 @@ struct Element
 // boundary point
 struct BoundaryPoint
 {
-        complex neumann;
+        complex neumann, dirichlet;
         float3 pos, normal;
         inline HOST_DEVICE BoundaryPoint() {}
         inline HOST_DEVICE BoundaryPoint(const Element &e, float u, float v)
-            : neumann(e.neumann(u, v)), pos(e.point(u, v)), normal(e.n)
+            : neumann(e.neumann(u, v)), pos(e.point(u, v)), normal(e.n), dirichlet(0)
         {}
 };
 
@@ -46,21 +46,56 @@ using NeighborList = CellList<int, MAX_NEIGHBOR_NUM>;
 class Scene
 {
     public:
+        size_t num_elements;
+        Element *elements;
         size_t num_boundary_points;
         BoundaryPoint *boundary_points;
         Grid grid;
         NeighborList *neighbor_list;
+        float total_area;
+        float *area_cdf;
 
         inline __device__ NeighborList &get_neighbor_list(float3 pos) const noexcept
         {
             return neighbor_list[grid.get_flat_index(pos)];
+        }
+
+        inline __device__ int sample_points_index(randomState *rand_state) const noexcept
+        {
+            int xi = curand_uniform(rand_state) * num_boundary_points;
+            if (xi == num_boundary_points)
+                xi--;
+            return xi;
+        }
+
+        inline __device__ BoundaryPoint sample_boundary_point(randomState *rand_state) const noexcept
+        {
+            float x = curand_uniform(rand_state) * total_area;
+            // binary search
+            uint l = 0, r = num_elements - 1;
+            while (l < r)
+            {
+                uint mid = (l + r) / 2;
+                if (area_cdf[mid] < x)
+                    l = mid + 1;
+                else
+                    r = mid;
+            }
+            uint element_id = l;
+            float u = curand_uniform(rand_state);
+            float v = curand_uniform(rand_state);
+            if (u + v > 1.f)
+            {
+                u = 1.f - u;
+                v = 1.f - v;
+            }
+            return BoundaryPoint(elements[element_id], u, v);
         }
 };
 
 class SceneHost
 {
     public:
-        std::vector<Element> elements;
         GPUMemory<Element> elements_device;
         GPUMemory<BoundaryPoint> boundary_points_device;
         GPUMemory<float> area_cdf;
@@ -70,24 +105,17 @@ class SceneHost
 
         SceneHost(const std::string config_json_file, int cut_idx = -1);
 
-        template <class Func>
-        void set_neumann(Func neumann_func)
-        {
-            for (int i = 0; i < elements.size(); i++)
-            {
-                elements[i].N0 = neumann_func(elements[i].v0, elements[i].n);
-                elements[i].N1 = neumann_func(elements[i].v1, elements[i].n);
-                elements[i].N2 = neumann_func(elements[i].v2, elements[i].n);
-            }
-            elements_device.copy_from_host(elements);
-        }
         Scene device()
         {
             return {
+                .num_elements = elements_device.size(),
+                .elements = elements_device.device_ptr(),
                 .num_boundary_points = boundary_points_device.size(),
                 .boundary_points = boundary_points_device.device_ptr(),
                 .grid = grid,
                 .neighbor_list = neighbor_list.device_ptr(),
+                .total_area = total_area,
+                .area_cdf = area_cdf.device_ptr(),
             };
         };
         void sample_boundary_points();

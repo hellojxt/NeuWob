@@ -31,6 +31,8 @@ template <>
 HOST_DEVICE inline complex Green_func<HELMHOLTZ>(float3 y, float3 x, float k)
 {
     float r = length(x - y);
+    if (r < 1e-6)
+        return complex(0, 0);
     return exp(complex(0, k * r)) / (4 * M_PI * r);
 }
 
@@ -38,6 +40,8 @@ template <>
 HOST_DEVICE inline complex Green_func_deriv<HELMHOLTZ>(float3 y, float3 x, float3 xn, float k)
 {
     float r = length(x - y);
+    if (r < 1e-6)
+        return complex(0, 0);
     complex ikr = complex(0, 1) * r * k;
     complex potential = -exp(ikr) / (4 * M_PI * r * r * r) * (1 - ikr) * dot(x - y, xn);
     return potential;
